@@ -68,7 +68,7 @@ Return the result in JSON format with keys: "matched", "missing", "score", "expl
 with gr.Blocks() as demo:
     gr.Markdown("## 🎯 Multi-CV Job Matcher (Gradio Version)")
     with gr.Row():
-        cv_input = gr.File(file_types=[".pdf"], file_types_allow_multiple=True, label="Upload up to 5 CV PDFs")
+        cv_input = gr.File(file_types=[".pdf"], file_types_multi=True, label="Upload up to 5 CV PDFs")
     job_input = gr.Textbox(lines=6, placeholder="Paste the Job Description here...", label="Job Description")
     output = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score", "Explanation"])
     run_button = gr.Button("Analyze CVs")
