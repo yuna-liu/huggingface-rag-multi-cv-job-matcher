@@ -1,70 +1,44 @@
 import gradio as gr
-from huggingface_hub import InferenceClient
+from PyPDF2 import PdfReader
+import json
 
+# Dummy function to simulate AI scoring
+def score_cvs(cv_files, job_description):
+    results = []
+    for cv_file in cv_files:
+        # Extract text from PDF
+        reader = PdfReader(cv_file.name)
+        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+        
+        # Here you would normally call a model/API
+        # For testing, we simulate scores
+        matched = ["SQL", "ETL"] if "SQL" in text else []
+        missing = ["AI experience"] if "AI" not in text else []
+        score = 75 if matched else 5
+        explanation = f"{cv_file.name} has {len(matched)} matched skills."
+        
+        results.append({
+            "CV Filename": cv_file.name,
+            "Matched Skills": ", ".join(matched),
+            "Missing Skills": ", ".join(missing),
+            "Match Score": score,
+            "Explanation": explanation
+        })
+    
+    return json.dumps(results, indent=2)
 
-def respond(
-    message,
-    history: list[dict[str, str]],
-    system_message,
-    max_tokens,
-    temperature,
-    top_p,
-    hf_token: gr.OAuthToken,
-):
-    """
-    For more information on `huggingface_hub` Inference API support, please check the docs: https://huggingface.co/docs/huggingface_hub/v0.22.2/en/guides/inference
-    """
-    client = InferenceClient(token=hf_token.token, model="openai/gpt-oss-20b")
-
-    messages = [{"role": "system", "content": system_message}]
-
-    messages.extend(history)
-
-    messages.append({"role": "user", "content": message})
-
-    response = ""
-
-    for message in client.chat_completion(
-        messages,
-        max_tokens=max_tokens,
-        stream=True,
-        temperature=temperature,
-        top_p=top_p,
-    ):
-        choices = message.choices
-        token = ""
-        if len(choices) and choices[0].delta.content:
-            token = choices[0].delta.content
-
-        response += token
-        yield response
-
-
-"""
-For information on how to customize the ChatInterface, peruse the gradio docs: https://www.gradio.app/docs/chatinterface
-"""
-chatbot = gr.ChatInterface(
-    respond,
-    type="messages",
-    additional_inputs=[
-        gr.Textbox(value="You are a friendly Chatbot.", label="System message"),
-        gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens"),
-        gr.Slider(minimum=0.1, maximum=4.0, value=0.7, step=0.1, label="Temperature"),
-        gr.Slider(
-            minimum=0.1,
-            maximum=1.0,
-            value=0.95,
-            step=0.05,
-            label="Top-p (nucleus sampling)",
-        ),
-    ],
-)
-
+# Gradio UI
 with gr.Blocks() as demo:
-    with gr.Sidebar():
-        gr.LoginButton()
-    chatbot.render()
+    gr.Markdown("## Multi-CV Job Matcher (Test Version)")
+    
+    with gr.Row():
+        cv_input = gr.File(file_types=[".pdf"], file_types_label="Upload CVs", file_types_multiple=True)
+        job_desc_input = gr.Textbox(label="Job Description", placeholder="Paste the Job Description here...")
+    
+    output_box = gr.Code(label="Results (JSON)")
 
+    run_btn = gr.Button("Run Matcher")
+    run_btn.click(score_cvs, inputs=[cv_input, job_desc_input], outputs=[output_box])
 
-if __name__ == "__main__":
-    demo.launch()
+demo.launch()
+
