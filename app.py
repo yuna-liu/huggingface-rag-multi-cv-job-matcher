@@ -1,11 +1,9 @@
-# File: app.py
 import gradio as gr
 from PyPDF2 import PdfReader
 from openai import OpenAI
 import json
 
-# === OpenAI API key ===
-client = OpenAI(api_key="YOUR_OPENAI_KEY")  # Replace with your key or use Secrets on Spaces
+client = OpenAI(api_key="YOUR_OPENAI_KEY")  # Replace with your key
 
 def parse_pdf(pdf_files):
     all_texts = []
@@ -64,11 +62,11 @@ Return the result in JSON format with keys: "matched", "missing", "score", "expl
         })
     return results
 
-# === Gradio Interface ===
 with gr.Blocks() as demo:
     gr.Markdown("## 🎯 Multi-CV Job Matcher (Gradio Version)")
-    with gr.Row():
-        cv_input = gr.File(label="Upload up to 5 CV PDFs", file_types=[".pdf"], file_types_multi=True)
+    
+    # Use gr.Files for multiple PDFs
+    cv_input = gr.Files(label="Upload up to 5 CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste the Job Description here...", label="Job Description")
     output = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score", "Explanation"])
     run_button = gr.Button("Analyze CVs")
@@ -76,5 +74,3 @@ with gr.Blocks() as demo:
     run_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output])
 
 demo.launch()
-
-
