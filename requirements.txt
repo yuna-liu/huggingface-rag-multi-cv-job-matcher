@@ -1,6 +1,6 @@
 gradio
-PyPDF2
 pdfplumber
 transformers
 torch
 nltk
+sentence-transformers
