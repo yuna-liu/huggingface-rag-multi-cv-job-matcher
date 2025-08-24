@@ -1,4 +1,4 @@
 gradio
 PyPDF2
 pandas
-openai
+torch
