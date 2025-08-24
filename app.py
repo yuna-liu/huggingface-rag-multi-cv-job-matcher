@@ -152,11 +152,21 @@ def ask_question(cv_files, question):
     index, texts = build_faiss_index(cv_chunks)
     results = retrieve(question, index, texts)
 
+    # Filter out empty or whitespace-only chunks
+    valid_results = [(fname, chunk) for fname, chunk in results if chunk.strip()]
+    if not valid_results:
+        return "No relevant information found."
+
     summaries = []
-    for filename, chunk in results:
-        summary = summarizer(chunk, max_length=80, min_length=20, do_sample=False)[0]['summary_text']
-        summaries.append(f"**{filename}**: {summary}")
-    return "\n".join(summaries) or "No relevant information found."
+    for filename, chunk in valid_results:
+        try:
+            summary = summarizer(chunk, max_length=80, min_length=20, do_sample=False)[0]['summary_text']
+            summaries.append(f"**{filename}**: {summary}")
+        except Exception:
+            summaries.append(f"**{filename}**: (Unable to summarize this section)")
+
+    return "\n".join(summaries) if summaries else "No relevant information found."
+
 
 # ----------------------------
 # Gradio UI
