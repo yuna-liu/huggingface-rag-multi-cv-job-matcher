@@ -1,5 +1,6 @@
 gradio
 PyPDF2
+pdfplumber
 transformers
 torch
 pytesseract
