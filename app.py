@@ -1,40 +1,42 @@
+# File: app.py
 import gradio as gr
 import pdfplumber
 import re
 import os
 import tempfile
+import shutil
+from transformers import pipeline
 
-# Temp folder for uploaded files
+# Create temp dir for uploaded PDFs
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Load lightweight summarizer (free HuggingFace model)
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 def save_temp_files(pdf_files):
     saved_paths = []
     for pdf_file in pdf_files:
-        temp_path = os.path.join(TEMP_DIR, pdf_file.name)
-        with open(temp_path, "wb") as f:
-            f.write(pdf_file.read())
+        temp_path = os.path.join(TEMP_DIR, os.path.basename(pdf_file.name))
+        shutil.copy(pdf_file.name, temp_path)
         saved_paths.append(temp_path)
     return saved_paths
 
 def parse_pdf(pdf_paths):
     all_texts = []
     for path in pdf_paths:
-        try:
-            with pdfplumber.open(path) as pdf:
-                text_pages = []
-                for i, page in enumerate(pdf.pages):
-                    page_text = page.extract_text() or ""
-                    text_pages.append(f"--- Page {i+1} ---\n{page_text}")
-                text = "\n".join(text_pages)
-                all_texts.append((os.path.basename(path), text))
-        except Exception as e:
-            all_texts.append((os.path.basename(path), f"[Error reading PDF: {e}]"))
+        with pdfplumber.open(path) as pdf:
+            text_pages = []
+            for i, page in enumerate(pdf.pages):
+                page_text = page.extract_text() or ""
+                text_pages.append(f"--- Page {i+1} ---\n{page_text}")
+            text = "\n".join(text_pages)
+            all_texts.append((os.path.basename(path), text))
     return all_texts
 
 def show_pdf_text(cv_files):
     if not cv_files:
-        return "No files uploaded."
+        return "No files uploaded"
     pdf_paths = save_temp_files(cv_files)
     parsed = parse_pdf(pdf_paths)
     display_text = ""
@@ -43,8 +45,6 @@ def show_pdf_text(cv_files):
     return display_text or "No text found in uploaded PDFs."
 
 def keyword_match(cv_text, job_text):
-    if not job_text.strip():
-        return [], [], 0
     cv_words = set(re.findall(r'\b\w+\b', cv_text.lower()))
     job_words = set(re.findall(r'\b\w+\b', job_text.lower()))
     matched = sorted(cv_words & job_words)
@@ -54,37 +54,58 @@ def keyword_match(cv_text, job_text):
 
 def match_cvs_to_job(cv_files, job_description):
     if not cv_files:
-        return [["(no file)", "(none)", "(none)", 0]]
+        return [["No file", "", "", 0]]
+    if not job_description.strip():
+        return [["No job description", "", "", 0]]
+    
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
-
-    rows = []
+    
+    results = []
     for filename, text in parsed_cvs:
         matched, missing, score = keyword_match(text, job_description)
-        rows.append([
+        results.append([
             filename,
-            ", ".join(matched[:15]) if matched else "(none)",
-            ", ".join(missing[:15]) if missing else "(none)",
+            ", ".join(matched[:15]) or "(none)",
+            ", ".join(missing[:15]) or "(none)",
             score
         ])
-    return rows
+    return results
+
+def summarize_cv(cv_files):
+    if not cv_files:
+        return "No files uploaded"
+    pdf_paths = save_temp_files(cv_files)
+    parsed = parse_pdf(pdf_paths)
+    summaries = ""
+    for filename, text in parsed:
+        if not text.strip():
+            summaries += f"===== {filename} =====\n(No text)\n\n"
+            continue
+        short_text = text[:2000]  # limit length for speed
+        summary = summarizer(short_text, max_length=100, min_length=30, do_sample=False)[0]['summary_text']
+        summaries += f"===== {filename} =====\n{summary}\n\n"
+    return summaries
 
 with gr.Blocks() as demo:
-    gr.Markdown("## ⚡ Instant CV Matcher with TempFile + PDF Debug View")
+    gr.Markdown("## ⚡ Instant CV Matcher + PDF Debug View + Quick Summary")
     
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
     
     output_table = gr.Dataframe(
-        headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"], 
+        headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"],
         type="array"
     )
     output_text = gr.Textbox(lines=20, label="PDF Text Debug Output")
+    output_summary = gr.Textbox(lines=10, label="Quick CV Summaries")
     
     analyze_button = gr.Button("Analyze CVs")
     debug_button = gr.Button("Show PDF Texts")
+    summary_button = gr.Button("Summarize CVs")
     
     analyze_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output_table])
     debug_button.click(fn=show_pdf_text, inputs=[cv_input], outputs=[output_text])
+    summary_button.click(fn=summarize_cv, inputs=[cv_input], outputs=[output_summary])
 
 demo.launch()
