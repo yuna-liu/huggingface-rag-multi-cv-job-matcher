@@ -220,4 +220,4 @@ with gr.Blocks() as demo:
     debug_button.click(fn=show_pdf_text, inputs=[cv_input], outputs=[output_text])
     summary_button.click(fn=summarize_cv, inputs=[cv_input], outputs=[output_summary])
 
-demo.launch()
+demo.launch(share=True)
