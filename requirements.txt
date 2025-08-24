@@ -3,6 +3,5 @@ PyPDF2
 pdfplumber
 transformers
 torch
-pytesseract
-pdf2image
-Pillow
+tempfile
+shutil
