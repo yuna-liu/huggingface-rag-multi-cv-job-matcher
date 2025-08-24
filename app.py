@@ -5,42 +5,26 @@ import re
 import os
 import tempfile
 import shutil
-import math
-
-# --- NEW: semantic embeddings + basic NLP ---
-from sentence_transformers import SentenceTransformer
-import numpy as np
-import nltk
-
-# Ensure NLTK data (first run will download once)
-try:
-    _ = nltk.corpus.stopwords.words("english")
-except:
-    nltk.download("stopwords")
-    nltk.download("punkt")
-
-EN_SW_STOP = set(nltk.corpus.stopwords.words("english"))
-# Minimal Swedish stoplist (add common fillers that kept showing up)
-SE_STOP = {
-    "och","att","det","som","en","i","på","för","med","till","av","är","ett","den","de","vi","du","din","dina",
-    "använda","användning","analys","analysera","arbetslivserfarenhet","bidra","bred","del","denna","din","du",
-    "erfarenhet","erfarenheter","förmåga","kommunicera","profil","roll","team","flexibelt","karriärutveckling",
-    "innovativ","kund","kunder","värde","svenska","engelska","tal","skrift"
-}
-STOPWORDS = EN_SW_STOP | SE_STOP
-
-# --- Keep your summarizer (same as before) ---
 from transformers import pipeline
-summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
 
-# --- Load lightweight multilingual embedding model (CPU friendly) ---
-EMB_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-emb_model = SentenceTransformer(EMB_MODEL_NAME)
-
-# Temp dir for uploaded PDFs
+# ----------------------------
+# Setup Temp Directory
+# ----------------------------
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+# ----------------------------
+# Models
+# ----------------------------
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+# ----------------------------
+# Helpers
+# ----------------------------
 def save_temp_files(pdf_files):
     saved_paths = []
     for pdf_file in pdf_files:
@@ -71,118 +55,45 @@ def show_pdf_text(cv_files):
         display_text += f"===== {filename} =====\n{text}\n\n"
     return display_text or "No text found in uploaded PDFs."
 
-# ---- Helpers for semantic matching ----
-def split_into_chunks(text, max_chars=1000):
-    """Split long CV text into chunks for better semantic matching."""
-    # split by paragraphs first
-    paras = [p.strip() for p in text.split("\n") if p.strip()]
-    chunks, cur = [], ""
-    for p in paras:
-        if len(cur) + len(p) + 1 <= max_chars:
-            cur = (cur + "\n" + p) if cur else p
-        else:
-            if cur:
-                chunks.append(cur)
-            cur = p
-    if cur:
-        chunks.append(cur)
-    # fallback if somehow empty
-    return chunks or [text[:max_chars]]
+# ----------------------------
+# Keyword Matching
+# ----------------------------
+stopwords = set([
+    "and", "or", "the", "a", "an", "to", "of", "in", "on", "for", "with", "by", "at", "from",
+    "is", "are", "was", "were", "be", "been", "being", "that", "this", "it", "as", "about"
+])
 
-def tokenize_keep_terms(s):
-    """Extract informative tokens, drop stopwords/digits, keep tech-like tokens."""
-    raw = re.findall(r"[A-Za-zÅÄÖåäö0-9\+\#\.\-_/]+", s.lower())
-    terms = []
-    for w in raw:
-        if w in STOPWORDS:
-            continue
-        if len(w) < 2:
-            continue
-        # keep techy tokens or acronyms (sql, dax, ai, ml, c#, .net)
-        if any(ch.isdigit() for ch in w) or any(ch in "+#._/-" for ch in w) or w.isupper() or w in {"sql","dax","ai","ml","bi"}:
-            terms.append(w)
-            continue
-        # otherwise alphas with length >=3
-        if w.isalpha() and len(w) >= 3:
-            terms.append(w)
-    return terms
+def keyword_match(cv_text, job_text):
+    cv_words = set(w for w in re.findall(r'\b\w+\b', cv_text.lower()) if w not in stopwords)
+    job_words = set(w for w in re.findall(r'\b\w+\b', job_text.lower()) if w not in stopwords)
+    matched = sorted(cv_words & job_words)
+    missing = sorted(job_words - cv_words)
+    score = round(len(matched) / max(1, len(job_words)) * 100, 2)  # percentage
+    return matched, missing, score
 
-def extract_matched_missing(job_text, cv_text, top_k=20):
-    job_terms = tokenize_keep_terms(job_text)
-    cv_terms = tokenize_keep_terms(cv_text)
-
-    # frequency dicts
-    from collections import Counter
-    jfreq = Counter(job_terms)
-    cfreq = Counter(cv_terms)
-
-    # rank job terms by frequency (proxy for importance)
-    ranked_job = [t for t,_ in jfreq.most_common()]
-    matched = [t for t in ranked_job if t in cfreq][:top_k]
-    missing = [t for t in ranked_job if t not in cfreq][:top_k]
-    return matched, missing
-
-def sim_to_percent(sim, lo=0.35, hi=0.85):
-    """
-    Map cosine similarity ~[0,1] into 0-100.
-    lo/hi are soft calibration points (tweakable).
-    """
-    x = (sim - lo) / (hi - lo)
-    x = max(0.0, min(1.0, x))
-    return round(x * 100, 1)
-
-def semantic_score(cv_text, job_text):
-    """
-    Compute a robust semantic score:
-    - chunk the CV
-    - embed chunks + job
-    - use a weighted blend of max and mean similarity
-    """
-    chunks = split_into_chunks(cv_text, max_chars=1000)
-    job_emb = emb_model.encode([job_text], normalize_embeddings=True)
-    cv_embs = emb_model.encode(chunks, normalize_embeddings=True)
-
-    sims = (cv_embs @ job_emb.T).squeeze(-1)  # cosine because normalized
-    if sims.ndim == 0:
-        sims = np.array([float(sims)])
-
-    max_sim = float(np.max(sims))
-    mean_sim = float(np.mean(sims))
-    # blend: emphasize best matching chunk but keep overall quality
-    blended = 0.7 * max_sim + 0.3 * mean_sim
-    score = sim_to_percent(blended)
-    return score
-
-# ---- Replace your keyword_match with semantic version ----
 def match_cvs_to_job(cv_files, job_description):
     if not cv_files:
-        return [["No file", "", "", 0]]
+        return [["No file", "", "", "0%"]]
     if not job_description.strip():
-        return [["No job description", "", "", 0]]
-
+        return [["No job description", "", "", "0%"]]
+    
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
-
-    rows = []
+    
+    results = []
     for filename, text in parsed_cvs:
-        if not text.strip():
-            rows.append([filename, "(none)", "(none)", 0])
-            continue
-
-        # semantic score
-        score = semantic_score(text, job_description)
-
-        # matched/missing terms (filtered)
-        matched, missing = extract_matched_missing(job_description, text, top_k=15)
-
-        rows.append([
+        matched, missing, score = keyword_match(text, job_description)
+        results.append([
             filename,
-            ", ".join(matched) or "(none)",
-            ", ".join(missing) or "(none)",
-            score
+            ", ".join(matched[:15]) or "(none)",
+            ", ".join(missing[:15]) or "(none)",
+            f"{score}%"
         ])
-    return rows
+    return results
 
+# ----------------------------
+# Summarization
+# ----------------------------
 def summarize_cv(cv_files):
     if not cv_files:
         return "No files uploaded"
@@ -193,31 +104,96 @@ def summarize_cv(cv_files):
         if not text.strip():
             summaries += f"===== {filename} =====\n(No text)\n\n"
             continue
-        short_text = text[:2000]  # limit length for speed
+        short_text = text[:2000]
         summary = summarizer(short_text, max_length=100, min_length=30, do_sample=False)[0]['summary_text']
         summaries += f"===== {filename} =====\n{summary}\n\n"
     return summaries
 
-# ---- UI (unchanged) ----
+# ----------------------------
+# RAG Functions
+# ----------------------------
+def chunk_text(text, chunk_size=500, overlap=50):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i+chunk_size])
+        chunks.append(chunk)
+    return chunks
+
+def build_faiss_index(cv_chunks):
+    texts = []
+    for filename, chunks in cv_chunks.items():
+        for chunk in chunks:
+            texts.append((filename, chunk))
+    embeddings = embedder.encode([t[1] for t in texts], convert_to_numpy=True)
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(embeddings)
+    return index, texts
+
+def retrieve(query, index, texts, top_k=5):
+    query_vec = embedder.encode([query], convert_to_numpy=True)
+    D, I = index.search(query_vec, top_k)
+    results = []
+    for idx in I[0]:
+        filename, chunk = texts[idx]
+        results.append((filename, chunk))
+    return results
+
+def ask_question(cv_files, question):
+    if not cv_files:
+        return "No files uploaded"
+    if not question.strip():
+        return "Please enter a question"
+    
+    pdf_paths = save_temp_files(cv_files)
+    parsed = parse_pdf(pdf_paths)
+
+    cv_chunks = {fname: chunk_text(text) for fname, text in parsed}
+    index, texts = build_faiss_index(cv_chunks)
+    results = retrieve(question, index, texts)
+
+    summaries = []
+    for filename, chunk in results:
+        summary = summarizer(chunk, max_length=80, min_length=20, do_sample=False)[0]['summary_text']
+        summaries.append(f"**{filename}**: {summary}")
+    return "\n".join(summaries) or "No relevant information found."
+
+# ----------------------------
+# Gradio UI
+# ----------------------------
 with gr.Blocks() as demo:
-    gr.Markdown("## ⚡ Instant CV Matcher + PDF Debug View + Quick Summary")
+    gr.Markdown("## ⚡ Instant CV Matcher + PDF Debug + Summary + RAG Search")
 
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
-    job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here (Swedish or English)...", label="Job Description")
+    job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
 
-    output_table = gr.Dataframe(
-        headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"],
-        type="array"
-    )
+    with gr.Row():
+        analyze_button = gr.Button("Analyze CVs")
+        debug_button = gr.Button("Show PDF Texts")
+        summary_button = gr.Button("Summarize CVs")
+
+    output_table = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"], type="array")
     output_text = gr.Textbox(lines=20, label="PDF Text Debug Output")
     output_summary = gr.Textbox(lines=10, label="Quick CV Summaries")
-
-    analyze_button = gr.Button("Analyze CVs")
-    debug_button = gr.Button("Show PDF Texts")
-    summary_button = gr.Button("Summarize CVs")
 
     analyze_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output_table])
     debug_button.click(fn=show_pdf_text, inputs=[cv_input], outputs=[output_text])
     summary_button.click(fn=summarize_cv, inputs=[cv_input], outputs=[output_summary])
+
+    gr.Markdown("### 🔍 Ask a Question about Candidates (RAG Search)")
+    question_input = gr.Textbox(lines=2, placeholder="Example: Who has Azure ML pipeline experience?", label="Query")
+    question_output = gr.Markdown()
+    ask_button = gr.Button("Ask About Candidates")
+
+    ask_button.click(fn=ask_question, inputs=[cv_input, question_input], outputs=[question_output])
+
+    gr.Markdown("""
+    **💡 Sample Questions:**
+    - Who has Azure ML pipeline experience?
+    - Which candidates have worked with Snowflake Cortex?
+    - Show me candidates experienced with XGBoost or Random Forest.
+    - Find people with RAG pipeline implementation experience.
+    - Which candidates have guardrails or AI governance background?
+    """)
 
 demo.launch(share=True)
