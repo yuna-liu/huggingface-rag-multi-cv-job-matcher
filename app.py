@@ -3,14 +3,24 @@ import gradio as gr
 from PyPDF2 import PdfReader
 from transformers import pipeline
 import json
+import os
+from huggingface_hub import login
 
-# Load Mistral 7B Instruct v0.3 from Hugging Face
+# Log in with HF token from secrets
+hf_token = os.getenv("HF_TOKEN")
+if hf_token:
+    login(token=hf_token)
+
+from transformers import pipeline
+# Now the model load will work
 generator = pipeline(
     "text-generation",
     model="mistralai/Mistral-7B-Instruct-v0.3",
+    token=hf_token,  # pass token here too
     device_map="auto",
     max_new_tokens=512
 )
+
 
 def parse_pdf(pdf_files):
     all_texts = []
