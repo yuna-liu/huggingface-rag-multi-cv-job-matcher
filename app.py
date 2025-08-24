@@ -1,35 +1,26 @@
 import gradio as gr
 from PyPDF2 import PdfReader
-from transformers import pipeline
 
-# Load a small summarization model
-summarizer = pipeline("summarization", model="google/flan-t5-small")
-
-def parse_pdf(pdf_files):
+def parse_pdf_test(pdf_files):
     all_texts = []
     for pdf_file in pdf_files:
         reader = PdfReader(pdf_file.name)
-        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-        all_texts.append((pdf_file.name, text))
+        text_per_page = []
+        for i, page in enumerate(reader.pages):
+            page_text = page.extract_text()
+            text_per_page.append(f"Page {i+1}:\n{page_text}" if page_text else f"Page {i+1}: [No text found]")
+        full_text = "\n\n".join(text_per_page)
+        all_texts.append({
+            "CV Filename": pdf_file.name,
+            "Extracted Text": full_text
+        })
     return all_texts
 
-def summarize_cvs(cv_files):
-    parsed_cvs = parse_pdf(cv_files)
-    results = []
-
-    for filename, text in parsed_cvs:
-        summary = summarizer(text, max_length=100, min_length=30, do_sample=False)
-        results.append({
-            "CV Filename": filename,
-            "Summary": summary[0]['summary_text']
-        })
-    return results
-
 with gr.Blocks() as demo:
-    gr.Markdown("## 🎯 Quick CV Summary Demo")
+    gr.Markdown("## 📝 PDF Text Extraction Test")
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
-    output = gr.Dataframe(headers=["CV Filename", "Summary"])
-    run_button = gr.Button("Summarize CVs")
-    run_button.click(fn=summarize_cvs, inputs=[cv_input], outputs=[output])
+    output = gr.Dataframe(headers=["CV Filename", "Extracted Text"])
+    run_button = gr.Button("Extract Text")
+    run_button.click(fn=parse_pdf_test, inputs=[cv_input], outputs=[output])
 
 demo.launch()
