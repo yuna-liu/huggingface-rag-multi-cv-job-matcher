@@ -2,3 +2,6 @@ gradio
 PyPDF2
 transformers
 torch
+pytesseract
+pdf2image
+Pillow
