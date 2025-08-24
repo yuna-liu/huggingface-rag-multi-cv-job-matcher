@@ -1,4 +1,3 @@
-# File: app.py
 import gradio as gr
 import pdfplumber
 import re
@@ -21,16 +20,21 @@ def save_temp_files(pdf_files):
 def parse_pdf(pdf_paths):
     all_texts = []
     for path in pdf_paths:
-        with pdfplumber.open(path) as pdf:
-            text_pages = []
-            for i, page in enumerate(pdf.pages):
-                page_text = page.extract_text() or ""
-                text_pages.append(f"--- Page {i+1} ---\n{page_text}")
-            text = "\n".join(text_pages)
-            all_texts.append((os.path.basename(path), text))
+        try:
+            with pdfplumber.open(path) as pdf:
+                text_pages = []
+                for i, page in enumerate(pdf.pages):
+                    page_text = page.extract_text() or ""
+                    text_pages.append(f"--- Page {i+1} ---\n{page_text}")
+                text = "\n".join(text_pages)
+                all_texts.append((os.path.basename(path), text))
+        except Exception as e:
+            all_texts.append((os.path.basename(path), f"[Error reading PDF: {e}]"))
     return all_texts
 
 def show_pdf_text(cv_files):
+    if not cv_files:
+        return "No files uploaded."
     pdf_paths = save_temp_files(cv_files)
     parsed = parse_pdf(pdf_paths)
     display_text = ""
@@ -39,6 +43,8 @@ def show_pdf_text(cv_files):
     return display_text or "No text found in uploaded PDFs."
 
 def keyword_match(cv_text, job_text):
+    if not job_text.strip():
+        return [], [], 0
     cv_words = set(re.findall(r'\b\w+\b', cv_text.lower()))
     job_words = set(re.findall(r'\b\w+\b', job_text.lower()))
     matched = sorted(cv_words & job_words)
@@ -47,6 +53,8 @@ def keyword_match(cv_text, job_text):
     return matched, missing, score
 
 def match_cvs_to_job(cv_files, job_description):
+    if not cv_files:
+        return [["(no file)", "(none)", "(none)", 0]]
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
 
@@ -59,7 +67,7 @@ def match_cvs_to_job(cv_files, job_description):
             ", ".join(missing[:15]) if missing else "(none)",
             score
         ])
-    return rows  # returns list of lists for Dataframe
+    return rows
 
 with gr.Blocks() as demo:
     gr.Markdown("## ⚡ Instant CV Matcher with TempFile + PDF Debug View")
