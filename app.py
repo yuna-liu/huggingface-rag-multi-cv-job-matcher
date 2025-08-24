@@ -1,31 +1,35 @@
 import gradio as gr
 from PyPDF2 import PdfReader
-from collections import Counter
+from transformers import pipeline
 
-def parse_pdf_keywords(pdf_files, job_description):
-    results = []
-    job_words = set(job_description.lower().split())
-    
+# Load a small summarization model
+summarizer = pipeline("summarization", model="google/flan-t5-small")
+
+def parse_pdf(pdf_files):
+    all_texts = []
     for pdf_file in pdf_files:
         reader = PdfReader(pdf_file.name)
-        text = " ".join([page.extract_text() or "" for page in reader.pages])
-        words = [w.lower() for w in text.split()]
-        counter = Counter(words)
-        matched = [w for w in counter if w in job_words]
+        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+        all_texts.append((pdf_file.name, text))
+    return all_texts
+
+def summarize_cvs(cv_files):
+    parsed_cvs = parse_pdf(cv_files)
+    results = []
+
+    for filename, text in parsed_cvs:
+        summary = summarizer(text, max_length=100, min_length=30, do_sample=False)
         results.append({
-            "CV Filename": pdf_file.name,
-            "Matched Keywords": ", ".join(matched[:5]),
-            "Total Matches": len(matched)
+            "CV Filename": filename,
+            "Summary": summary[0]['summary_text']
         })
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## Quick CV Matcher Demo")
+    gr.Markdown("## 🎯 Quick CV Summary Demo")
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
-    job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
-    output = gr.Dataframe(headers=["CV Filename", "Matched Keywords", "Total Matches"])
-    run_button = gr.Button("Analyze CVs")
-    
-    run_button.click(fn=parse_pdf_keywords, inputs=[cv_input, job_input], outputs=[output])
+    output = gr.Dataframe(headers=["CV Filename", "Summary"])
+    run_button = gr.Button("Summarize CVs")
+    run_button.click(fn=summarize_cvs, inputs=[cv_input], outputs=[output])
 
 demo.launch()
