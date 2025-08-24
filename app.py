@@ -1,20 +1,20 @@
+# File: app.py
 import gradio as gr
 import pdfplumber
 import re
 import os
 import tempfile
-import shutil
 
-# 临时目录存放上传文件
+# Temp folder for uploaded files
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 def save_temp_files(pdf_files):
     saved_paths = []
     for pdf_file in pdf_files:
-        # pdf_file.name is filename; pdf_file is actually a temporary file path in Spaces
-        temp_path = os.path.join(TEMP_DIR, os.path.basename(pdf_file.name))
-        shutil.copy(pdf_file.name, temp_path)  # copy the uploaded file
+        temp_path = os.path.join(TEMP_DIR, pdf_file.name)
+        with open(temp_path, "wb") as f:
+            f.write(pdf_file.read())
         saved_paths.append(temp_path)
     return saved_paths
 
@@ -31,8 +31,6 @@ def parse_pdf(pdf_paths):
     return all_texts
 
 def show_pdf_text(cv_files):
-    if not cv_files:
-        return "No files uploaded"
     pdf_paths = save_temp_files(cv_files)
     parsed = parse_pdf(pdf_paths)
     display_text = ""
@@ -49,26 +47,19 @@ def keyword_match(cv_text, job_text):
     return matched, missing, score
 
 def match_cvs_to_job(cv_files, job_description):
-    if not cv_files:
-        return [{"CV Filename": "No file", "Matched Skills": "", "Missing Skills": "", "Match Score": 0}]
-    
-    if not job_description.strip():
-        return [{"CV Filename": "No job description", "Matched Skills": "", "Missing Skills": "", "Match Score": 0}]
-    
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
-    
-    results = []
+
+    rows = []
     for filename, text in parsed_cvs:
         matched, missing, score = keyword_match(text, job_description)
-        results.append({
-            "CV Filename": filename,
-            "Matched Skills": ", ".join(matched[:15]) or "(none)",
-            "Missing Skills": ", ".join(missing[:15]) or "(none)",
-            "Match Score": score
-        })
-    return results
-
+        rows.append([
+            filename,
+            ", ".join(matched[:15]) if matched else "(none)",
+            ", ".join(missing[:15]) if missing else "(none)",
+            score
+        ])
+    return rows  # returns list of lists for Dataframe
 
 with gr.Blocks() as demo:
     gr.Markdown("## ⚡ Instant CV Matcher with TempFile + PDF Debug View")
@@ -76,7 +67,10 @@ with gr.Blocks() as demo:
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
     
-    output_table = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"])
+    output_table = gr.Dataframe(
+        headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"], 
+        type="array"
+    )
     output_text = gr.Textbox(lines=20, label="PDF Text Debug Output")
     
     analyze_button = gr.Button("Analyze CVs")
