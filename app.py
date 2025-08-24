@@ -50,7 +50,11 @@ def keyword_match(cv_text, job_text):
 
 def match_cvs_to_job(cv_files, job_description):
     if not cv_files:
-        return []
+        return [{"CV Filename": "No file", "Matched Skills": "", "Missing Skills": "", "Match Score": 0}]
+    
+    if not job_description.strip():
+        return [{"CV Filename": "No job description", "Matched Skills": "", "Missing Skills": "", "Match Score": 0}]
+    
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
     
@@ -59,11 +63,12 @@ def match_cvs_to_job(cv_files, job_description):
         matched, missing, score = keyword_match(text, job_description)
         results.append({
             "CV Filename": filename,
-            "Matched Skills": ", ".join(matched[:15]),
-            "Missing Skills": ", ".join(missing[:15]),
+            "Matched Skills": ", ".join(matched[:15]) or "(none)",
+            "Missing Skills": ", ".join(missing[:15]) or "(none)",
             "Match Score": score
         })
     return results
+
 
 with gr.Blocks() as demo:
     gr.Markdown("## ⚡ Instant CV Matcher with TempFile + PDF Debug View")
