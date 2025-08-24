@@ -4,9 +4,8 @@ import pdfplumber
 import re
 import os
 import tempfile
-import shutil
 
-# 创建临时目录存放上传的文件
+# 临时目录存放上传文件
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -23,9 +22,21 @@ def parse_pdf(pdf_paths):
     all_texts = []
     for path in pdf_paths:
         with pdfplumber.open(path) as pdf:
-            text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
+            text_pages = []
+            for i, page in enumerate(pdf.pages):
+                page_text = page.extract_text() or ""
+                text_pages.append(f"--- Page {i+1} ---\n{page_text}")
+            text = "\n".join(text_pages)
             all_texts.append((os.path.basename(path), text))
     return all_texts
+
+def show_pdf_text(cv_files):
+    pdf_paths = save_temp_files(cv_files)
+    parsed = parse_pdf(pdf_paths)
+    display_text = ""
+    for filename, text in parsed:
+        display_text += f"===== {filename} =====\n{text}\n\n"
+    return display_text or "No text found in uploaded PDFs."
 
 def keyword_match(cv_text, job_text):
     cv_words = set(re.findall(r'\b\w+\b', cv_text.lower()))
@@ -36,7 +47,6 @@ def keyword_match(cv_text, job_text):
     return matched, missing, score
 
 def match_cvs_to_job(cv_files, job_description):
-    # 先存到临时目录
     pdf_paths = save_temp_files(cv_files)
     parsed_cvs = parse_pdf(pdf_paths)
     
@@ -52,12 +62,18 @@ def match_cvs_to_job(cv_files, job_description):
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## ⚡ Instant CV Matcher with TempFile")
+    gr.Markdown("## ⚡ Instant CV Matcher with TempFile + PDF Debug View")
+    
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
-    output = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"])
-    run_button = gr.Button("Analyze CVs")
     
-    run_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output])
+    output_table = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"])
+    output_text = gr.Textbox(lines=20, label="PDF Text Debug Output")
+    
+    analyze_button = gr.Button("Analyze CVs")
+    debug_button = gr.Button("Show PDF Texts")
+    
+    analyze_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output_table])
+    debug_button.click(fn=show_pdf_text, inputs=[cv_input], outputs=[output_text])
 
 demo.launch()
