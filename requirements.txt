@@ -1,6 +1,2 @@
-gradio
-PyPDF2
-transformers
-torch
-sentencepiece
-accelerate
+gradio==3.53.1
+PyPDF2==3.1.0
