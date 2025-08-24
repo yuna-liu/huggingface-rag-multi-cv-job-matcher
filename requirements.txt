@@ -3,5 +3,3 @@ PyPDF2
 pdfplumber
 transformers
 torch
-tempfile
-shutil
