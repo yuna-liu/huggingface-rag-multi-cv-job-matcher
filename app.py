@@ -3,11 +3,7 @@ from PyPDF2 import PdfReader
 from transformers import pipeline
 
 # Load small, free model for instruction-following
-generator = pipeline(
-    "text-generation",
-    model="HuggingFaceH4/zephyr-7b-alpha",
-    max_new_tokens=512
-)
+generator = pipeline("text2text-generation", model="google/flan-t5-base")
 
 def parse_pdf(pdf_files):
     all_texts = []
