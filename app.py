@@ -6,6 +6,18 @@ import os
 import tempfile
 import shutil
 from transformers import pipeline
+from nltk.corpus import stopwords as nltk_stopwords
+from nltk.stem import WordNetLemmatizer
+import nltk
+
+# Download WordNet and stopwords (run once)
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+nltk.download('stopwords')
+
+# Setup lemmatizer and stopwords
+lemmatizer = WordNetLemmatizer()
+stopwords = set(nltk_stopwords.words('english'))
 
 # Create temp dir for uploaded PDFs
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
@@ -13,7 +25,6 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Load lightweight summarizer (free HuggingFace model)
 summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-
 
 def save_temp_files(pdf_files):
     saved_paths = []
@@ -45,25 +56,22 @@ def show_pdf_text(cv_files):
         display_text += f"===== {filename} =====\n{text}\n\n"
     return display_text or "No text found in uploaded PDFs."
 
+# ---- Improved keyword_match ----
+def clean_and_lemmatize(text):
+    words = re.findall(r'\b\w+\b', text.lower())
+    return set(lemmatizer.lemmatize(w) for w in words if w not in stopwords)
+
 def keyword_match(cv_text, job_text):
-    # Combined stopwords: Swedish + English (simple list)
-    stopwords = {
-        # Swedish
-        "att", "av", "du", "din", "och", "för", "med", "i", "på", "den", "det", "en", "ett", "som",
-        # English
-        "the", "and", "for", "with", "from", "that", "this", "a", "an", "to", "in", "of", "on"
-    }
-    
-    # Extract words, lowercase, remove stopwords and short words
-    cv_words = set(w for w in re.findall(r'\b\w+\b', cv_text.lower()) if w not in stopwords and len(w) > 2)
-    job_words = set(w for w in re.findall(r'\b\w+\b', job_text.lower()) if w not in stopwords and len(w) > 2)
+    cv_words = clean_and_lemmatize(cv_text)
+    job_words = clean_and_lemmatize(job_text)
     
     matched = sorted(cv_words & job_words)
     missing = sorted(job_words - cv_words)
+    
+    # Score 0-100% based on ratio of matched keywords
     score = round(len(matched) / max(1, len(job_words)) * 100, 2)
     
     return matched, missing, score
-
 
 def match_cvs_to_job(cv_files, job_description):
     if not cv_files:
