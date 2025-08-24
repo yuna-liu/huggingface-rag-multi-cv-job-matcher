@@ -1,10 +1,14 @@
 # File: app.py
 import gradio as gr
 from PyPDF2 import PdfReader
-from transformers import pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import json
 
-# Load summarization model (free HF model)
-summarizer = pipeline("summarization", model="google/flan-t5-large")  # smaller free model
+# Load a free HF model (Mistral-7B-Instruct if possible)
+model_name = "mistralai/Mistral-7B-Instruct-v0.3"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
 
 def parse_pdf(pdf_files):
     texts = []
@@ -14,27 +18,51 @@ def parse_pdf(pdf_files):
         texts.append((pdf_file.name, text))
     return texts
 
-def summarize_cvs(cv_files):
+def extract_skills(cv_files, job_description):
     parsed_cvs = parse_pdf(cv_files)
     results = []
 
     for filename, text in parsed_cvs:
-        # Limit text length for model
-        snippet = text[:4000]  # cut long CVs
-        summary = summarizer(snippet, max_length=150, min_length=60, do_sample=False)[0]['summary_text']
+        prompt = f"""
+You are a career assistant.
+CV Text:
+{text}
+
+Job Description:
+{job_description}
+
+Extract:
+1. Key skills
+2. Key experiences
+3. Overall match points (0-100)
+
+Return as JSON with keys: "skills", "experience", "match_points"
+"""
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(model.device)
+        outputs = model.generate(**inputs, max_new_tokens=300)
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        try:
+            answer_json = json.loads(answer)
+        except:
+            answer_json = {"skills": answer, "experience": "", "match_points": 0}
+
         results.append({
             "CV Filename": filename,
-            "Summary": summary
+            "Skills": answer_json.get("skills"),
+            "Experience": answer_json.get("experience"),
+            "Match Points": answer_json.get("match_points")
         })
 
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## 📝 CV Summarizer (Free Model Version)")
+    gr.Markdown("## 🏷️ CV Skill & Experience Extractor (Free HF Model)")
     cv_input = gr.Files(label="Upload CV PDFs (.pdf)", file_types=[".pdf"])
-    output = gr.Dataframe(headers=["CV Filename", "Summary"])
-    run_button = gr.Button("Summarize CVs")
+    job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
+    output = gr.Dataframe(headers=["CV Filename", "Skills", "Experience", "Match Points"])
+    run_button = gr.Button("Analyze CVs")
     
-    run_button.click(fn=summarize_cvs, inputs=[cv_input], outputs=[output])
+    run_button.click(fn=extract_skills, inputs=[cv_input, job_input], outputs=[output])
 
 demo.launch()
