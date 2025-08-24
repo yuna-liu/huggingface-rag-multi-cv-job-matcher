@@ -1,9 +1,16 @@
+# app.py
 import gradio as gr
 from PyPDF2 import PdfReader
-from openai import OpenAI
+from transformers import pipeline
 import json
 
-client = OpenAI(api_key="YOUR_OPENAI_KEY")  # Replace with your key
+# Load Mistral 7B Instruct v0.3 from Hugging Face
+generator = pipeline(
+    "text-generation",
+    model="mistralai/Mistral-7B-Instruct-v0.3",
+    device_map="auto",
+    max_new_tokens=512
+)
 
 def parse_pdf(pdf_files):
     all_texts = []
@@ -16,7 +23,7 @@ def parse_pdf(pdf_files):
 def match_cvs_to_job(cv_files, job_description):
     parsed_cvs = parse_pdf(cv_files)
     results = []
-    
+
     for filename, text in parsed_cvs:
         prompt = f"""
 You are a career assistant.
@@ -31,23 +38,17 @@ Please provide:
 1. List of skills, experiences, and qualifications from the CV that match the job requirements.
 2. List of skills/experience that are missing.
 3. An overall match score (0-100%) with a short explanation.
+
 Return the result in JSON format with keys: "matched", "missing", "score", "explanation".
 """
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful career assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0
-        )
-        answer_text = response.choices[0].message.content
+        raw_output = generator(prompt)[0]["generated_text"]
 
         try:
-            answer_json = json.loads(answer_text)
+            json_str = raw_output[raw_output.find("{"):raw_output.rfind("}")+1]
+            answer_json = json.loads(json_str)
         except:
             answer_json = {
-                "matched": answer_text,
+                "matched": raw_output,
                 "missing": "",
                 "score": "0",
                 "explanation": ""
@@ -60,12 +61,12 @@ Return the result in JSON format with keys: "matched", "missing", "score", "expl
             "Match Score": answer_json.get("score"),
             "Explanation": str(answer_json.get("explanation"))
         })
+
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## 🎯 Multi-CV Job Matcher (Gradio Version)")
-    
-    # Use gr.Files for multiple PDFs
+    gr.Markdown("## 📄 Multi-CV Job Matcher — Mistral-7B-Instruct-v0.3 (Free on HF)")
+
     cv_input = gr.Files(label="Upload up to 5 CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste the Job Description here...", label="Job Description")
     output = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score", "Explanation"])
