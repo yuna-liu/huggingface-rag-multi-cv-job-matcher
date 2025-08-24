@@ -1,38 +1,40 @@
+# File: app.py
 import gradio as gr
 from PyPDF2 import PdfReader
+from transformers import pipeline
+
+# Load summarization model (free HF model)
+summarizer = pipeline("summarization", model="google/flan-t5-large")  # smaller free model
 
 def parse_pdf(pdf_files):
     texts = []
     for pdf_file in pdf_files:
         reader = PdfReader(pdf_file.name)
-        text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-        texts.append((pdf_file.name, text.lower()))
+        text = " ".join([page.extract_text() for page in reader.pages if page.extract_text()])
+        texts.append((pdf_file.name, text))
     return texts
 
-def match_points(cv_files, job_description):
-    job_keywords = [kw.strip().lower() for kw in job_description.split(",")]
+def summarize_cvs(cv_files):
     parsed_cvs = parse_pdf(cv_files)
     results = []
 
     for filename, text in parsed_cvs:
-        matched_count = sum(1 for kw in job_keywords if kw in text)
-        total_count = len(job_keywords)
-        score = round(matched_count / total_count * 100, 1) if total_count > 0 else 0
-
+        # Limit text length for model
+        snippet = text[:4000]  # cut long CVs
+        summary = summarizer(snippet, max_length=150, min_length=60, do_sample=False)[0]['summary_text']
         results.append({
             "CV Filename": filename,
-            "Match Points": f"{score}%",
-            "Matched Keywords": ", ".join([kw for kw in job_keywords if kw in text])
+            "Summary": summary
         })
+
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## 📊 CV Matcher (Keyword-based, Fast Version)")
-    cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
-    job_input = gr.Textbox(lines=3, placeholder="Enter job keywords separated by commas", label="Job Description Keywords")
-    output = gr.Dataframe(headers=["CV Filename", "Match Points", "Matched Keywords"], datatype=["str","str","str"])
-    run_button = gr.Button("Calculate Match Points")
-
-    run_button.click(fn=match_points, inputs=[cv_input, job_input], outputs=[output])
+    gr.Markdown("## 📝 CV Summarizer (Free Model Version)")
+    cv_input = gr.Files(label="Upload CV PDFs (.pdf)", file_types=[".pdf"])
+    output = gr.Dataframe(headers=["CV Filename", "Summary"])
+    run_button = gr.Button("Summarize CVs")
+    
+    run_button.click(fn=summarize_cvs, inputs=[cv_input], outputs=[output])
 
 demo.launch()
