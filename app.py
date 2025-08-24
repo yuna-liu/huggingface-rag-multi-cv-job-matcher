@@ -14,6 +14,8 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 # Load lightweight summarizer (free HuggingFace model)
 summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
 def save_temp_files(pdf_files):
     saved_paths = []
     for pdf_file in pdf_files:
@@ -45,10 +47,19 @@ def show_pdf_text(cv_files):
     return display_text or "No text found in uploaded PDFs."
 
 def keyword_match(cv_text, job_text):
-    cv_words = set(re.findall(r'\b\w+\b', cv_text.lower()))
-    job_words = set(re.findall(r'\b\w+\b', job_text.lower()))
-    matched = sorted(cv_words & job_words)
-    missing = sorted(job_words - cv_words)
+    # extract job keywords (split by space, comma, semicolon, etc.)
+    job_words = [w.strip() for w in re.split(r"[,\n;]+", job_text.lower()) if w.strip()]
+    if not job_words:
+        return [], [], 0
+
+    # classify each keyword against the CV text
+    matched = []
+    for kw in job_words:
+        result = classifier(cv_text, candidate_labels=[kw])
+        if result['scores'][0] >= 0.5:  # threshold for match
+            matched.append(kw)
+
+    missing = [kw for kw in job_words if kw not in matched]
     score = round(len(matched) / max(1, len(job_words)) * 100, 2)
     return matched, missing, score
 
