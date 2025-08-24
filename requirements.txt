@@ -1,3 +1,4 @@
 gradio
 PyPDF2
 transformers
+torch
