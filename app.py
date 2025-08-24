@@ -3,20 +3,28 @@ import gradio as gr
 import pdfplumber
 import re
 import os
+import tempfile
+import shutil
 
-def parse_pdf(pdf_files):
-    all_texts = []
+# 创建临时目录存放上传的文件
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "TempFile")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+def save_temp_files(pdf_files):
+    saved_paths = []
     for pdf_file in pdf_files:
-        file_path = pdf_file if isinstance(pdf_file, str) else pdf_file.name
-        if not os.path.exists(file_path):
-            print(f"File not found: {file_path}")
-            continue
-        with pdfplumber.open(file_path) as pdf:
-            text = "\n".join(
-                [page.extract_text() or "" for page in pdf.pages]
-            ).strip()
-            print(f"Extracted from {file_path[:50]}: {text[:200]}...")  # debug
-            all_texts.append((os.path.basename(file_path), text))
+        temp_path = os.path.join(TEMP_DIR, pdf_file.name)
+        with open(temp_path, "wb") as f:
+            f.write(pdf_file.read())
+        saved_paths.append(temp_path)
+    return saved_paths
+
+def parse_pdf(pdf_paths):
+    all_texts = []
+    for path in pdf_paths:
+        with pdfplumber.open(path) as pdf:
+            text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
+            all_texts.append((os.path.basename(path), text))
     return all_texts
 
 def keyword_match(cv_text, job_text):
@@ -28,17 +36,12 @@ def keyword_match(cv_text, job_text):
     return matched, missing, score
 
 def match_cvs_to_job(cv_files, job_description):
-    parsed_cvs = parse_pdf(cv_files)
+    # 先存到临时目录
+    pdf_paths = save_temp_files(cv_files)
+    parsed_cvs = parse_pdf(pdf_paths)
+    
     results = []
     for filename, text in parsed_cvs:
-        if not text.strip():
-            results.append({
-                "CV Filename": filename,
-                "Matched Skills": "No text found",
-                "Missing Skills": "",
-                "Match Score": 0
-            })
-            continue
         matched, missing, score = keyword_match(text, job_description)
         results.append({
             "CV Filename": filename,
@@ -49,12 +52,12 @@ def match_cvs_to_job(cv_files, job_description):
     return results
 
 with gr.Blocks() as demo:
-    gr.Markdown("## ⚡ Instant CV Matcher (No Big Model Needed)")
+    gr.Markdown("## ⚡ Instant CV Matcher with TempFile")
     cv_input = gr.Files(label="Upload CV PDFs", file_types=[".pdf"])
     job_input = gr.Textbox(lines=6, placeholder="Paste Job Description here...", label="Job Description")
     output = gr.Dataframe(headers=["CV Filename", "Matched Skills", "Missing Skills", "Match Score"])
     run_button = gr.Button("Analyze CVs")
-
+    
     run_button.click(fn=match_cvs_to_job, inputs=[cv_input, job_input], outputs=[output])
 
 demo.launch()
