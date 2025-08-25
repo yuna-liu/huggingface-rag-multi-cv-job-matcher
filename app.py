@@ -195,7 +195,15 @@ with gr.Blocks() as demo:
     question_output = gr.Markdown()
     ask_button = gr.Button("Ask About Candidates")
 
-    ask_button.click(fn=ask_question, inputs=[cv_input, question_input], outputs=[question_output])
+    # Instant feedback message
+    def show_processing_message():
+        return "⏳ Processing your request, please wait..."
+
+    def run_rag(cv_files, question):
+        return ask_question(cv_files, question)
+
+    ask_button.click(fn=show_processing_message, inputs=[], outputs=[question_output]) \
+              .then(fn=run_rag, inputs=[cv_input, question_input], outputs=[question_output])
 
     gr.Markdown("""
     **💡 Sample Questions:**
