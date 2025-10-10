@@ -7,6 +7,7 @@ import tempfile
 import shutil
 from transformers import pipeline
 from sentence_transformers import SentenceTransformer
+import nltk
 import faiss
 import numpy as np
 
@@ -58,17 +59,35 @@ def show_pdf_text(cv_files):
 # ----------------------------
 # Keyword Matching
 # ----------------------------
-stopwords = set([
-    "and", "or", "the", "a", "an", "to", "of", "in", "on", "for", "with", "by", "at", "from",
-    "is", "are", "was", "were", "be", "been", "being", "that", "this", "it", "as", "about"
-])
+try:
+    nltk.data.find('corpora/stopwords')
+except nltk.downloader.DownloadError:
+    nltk.download('stopwords')
+
+stop_words = set(nltk.corpus.stopwords.words('english'))
+
+def extract_keywords_from_job(job_text, top_n=30):
+    """Extracts top N keywords from job description based on frequency."""
+    words = re.findall(r'\b\w+\b', job_text.lower())
+    
+    # Count frequency of non-stopwords
+    word_counts = {}
+    for word in words:
+        if word not in stop_words and len(word) > 2:
+            word_counts[word] = word_counts.get(word, 0) + 1
+            
+    # Sort words by frequency in descending order
+    sorted_words = sorted(word_counts.items(), key=lambda item: item[1], reverse=True)
+    
+    # Return the top N words as a set
+    return set(word for word, count in sorted_words[:top_n])
 
 def keyword_match(cv_text, job_text):
-    cv_words = set(w for w in re.findall(r'\b\w+\b', cv_text.lower()) if w not in stopwords)
-    job_words = set(w for w in re.findall(r'\b\w+\b', job_text.lower()) if w not in stopwords)
-    matched = sorted(cv_words & job_words)
-    missing = sorted(job_words - cv_words)
-    score = round(len(matched) / max(1, len(job_words)) * 100, 2)  # percentage
+    cv_words = set(w for w in re.findall(r'\b\w+\b', cv_text.lower()) if w not in stop_words)
+    job_keywords = extract_keywords_from_job(job_text)
+    matched = sorted(cv_words & job_keywords)
+    missing = sorted(job_keywords - cv_words)
+    score = round(len(matched) / max(1, len(job_keywords)) * 100, 2)  # percentage
     return matched, missing, score
 
 def match_cvs_to_job(cv_files, job_description):
