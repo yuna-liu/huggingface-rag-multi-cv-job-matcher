@@ -108,50 +108,40 @@ FAISS (CPU)
 Torch
 PDFPlumber
 NLTK
-NumPy
+NumPy```
+
 🛠 Run Locally (Optional)
-bash
-Copy code
+```bash
 git clone https://github.com/yuna-liu/huggingface-rag-multi-cv-job-matcher.git
 cd huggingface-rag-multi-cv-job-matcher
 pip install -r requirements.txt
-python app.py
+python app.py```
+
 Then open:
-
-text
+```text
 Copy code
-http://localhost:7860
+http://localhost:7860```
+
 🌍 Deployment
-Originally deployed on Hugging Face Spaces
-
-Designed to be portable to:
-
-Docker
-
-Cloud VMs
-
-Enterprise ML platforms (e.g. Databricks + MLflow)
+- Originally deployed on Hugging Face Spaces
+- Designed to be portable to:
+    - Docker
+    - Cloud VMs
+    - Enterprise ML platforms (e.g. Databricks + MLflow)
 
 🎯 Use Cases
-CV screening & recruitment automation
-
-Skill gap analysis
-
-Resume-to-job semantic matching
-
-RAG / LLM engineering portfolio demo
-
-Document understanding workflows
+- CV screening & recruitment automation
+- Skill gap analysis
+- Resume-to-job semantic matching
+- RAG / LLM engineering portfolio demo
+- Document understanding workflows
 
 📌 Notes
 This repository focuses on engineering transparency and reproducibility.
 
 The goal is to clearly demonstrate:
-
-how RAG is implemented,
-
-how Transformer-based embeddings are used,
-
-and how CV–job matching works end-to-end.
+- how RAG is implemented,
+- how Transformer-based embeddings are used,
+- and how CV–job matching works end-to-end.
 
 
